@@ -382,6 +382,8 @@ void CryptoUtils::CreateInitialObfuscators(Perspective perspective,
     crypters->decrypter = std::make_unique<NullDecrypter>(perspective);
     return;
   }
+
+  // TODO KEELY !!! CHANGE THIS!!!
   crypters->encrypter = std::make_unique<Aes128GcmEncrypter>();
   crypters->decrypter = std::make_unique<Aes128GcmDecrypter>();
 
