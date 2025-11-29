@@ -27,19 +27,21 @@
 namespace quic {
 
     // TODO: Replace with actual RSA private key.
-    const char* SERVER_PUBLIC_KEY_PEM = R"(-----BEGIN PUBLIC KEY-----
-    MCowBQYDK2VuAyEAxQz3sAKsoJCV3QUf7yVU8rEmphBCJ5N2vQEpou4koxQ=
-    -----END PUBLIC KEY-----
-    )";
+    // static const char* SERVER_PUBLIC_KEY_PEM = R"(-----BEGIN PUBLIC KEY-----
+    // MCowBQYDK2VuAyEAxQz3sAKsoJCV3QUf7yVU8rEmphBCJ5N2vQEpou4koxQ=
+    // -----END PUBLIC KEY-----
+    // )";
 
-    const char* SERVER_PRIVATE_KEY_PEM = R"(-----BEGIN PRIVATE KEY-----
-    MC4CAQAwBQYDK2VuBCIEIKjiUObrpM8EG692XZQpWEl1bbAcQolpgz00tfqQyyNz
-    -----END PRIVATE KEY-----
-    )"; 
+  static const char* SERVER_PRIVATE_KEY_PEM = R"(-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VuBCIEIKjiUObrpM8EG692XZQpWEl1bbAcQolpgz00tfqQyyNz
+-----END PRIVATE KEY-----
+)";
+
 
     const size_t kKeySize = 32;  // AES-128 uses 16-byte keys NOTE TODO: ENCRYPTER IS 32 - SHOULD THIS BE 32 or 16????
     const size_t kNonceSize = 12;
     const size_t kTagSize = 16;
+    const size_t kHeaderSize = kKeySize + kNonceSize + kTagSize;
 
 ProtectedInitialDecrypter::ProtectedInitialDecrypter() 
     : AesBaseDecrypter(EVP_aead_aes_128_gcm(), 
@@ -59,25 +61,30 @@ bool ProtectedInitialDecrypter::DecryptPacket(uint64_t packet_number,
                                                size_t max_output_length) {
   
   // The ciphertext format is: [eph pub key (32 bytes)][iv (12 bytes)][auth tag (16 bytes)][encrypted payload]
-  
-  // Error check - amount of data
-  if (ciphertext.size() < kKeySize + kNonceSize + kTagSize) {
+  const size_t header_len = kHeaderSize;
+
+  if (ciphertext.size() < header_len) {
     QUIC_LOG(ERROR) << "Ciphertext too short";
     return false;
   }
 
-  // Extract ephemeral public key, IV, tag, and encrypted payload
+  // Extract ephemeral public key, IV, tag, and encrypted payload from ciphertext.
+  const uint8_t* cursor =
+      reinterpret_cast<const uint8_t*>(ciphertext.data());
   std::array<uint8_t, kKeySize> eph_pub{};
-  std::memcpy(eph_pub.data(), data, kKeySize);
+  std::memcpy(eph_pub.data(), cursor, kKeySize);
+  cursor += kKeySize;
 
   std::array<uint8_t, kNonceSize> iv{};
-  std::memcpy(iv.data(), data + kKeySize, kNonceSize);
-  std::array<uint8_t, kTagSize> tag{};
-  std::memcpy(tag.data(), data + kKeySize + kNonceSize, kTagSize);
+  std::memcpy(iv.data(), cursor, kNonceSize);
+  cursor += kNonceSize;
 
-  size_t enc_len = ciphertext.size() - kKeySize - kNonceSize - kTagSize;
-  std::vector<uint8_t> enc_payload(enc_len);
-  std::memcpy(enc_payload.data(), data + kKeySize + kNonceSize + kTagSize, enc_len);
+  std::array<uint8_t, kTagSize> tag{};
+  std::memcpy(tag.data(), cursor, kTagSize);
+  cursor += kTagSize;
+
+  size_t enc_len = ciphertext.size() - header_len;
+  const uint8_t* enc_payload = cursor;
 
   // load server private key from PEM
   BIO* bio_priv = BIO_new_mem_buf(SERVER_PRIVATE_KEY_PEM, -1);
@@ -141,7 +148,7 @@ bool ProtectedInitialDecrypter::DecryptPacket(uint64_t packet_number,
   if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1 ||
       EVP_DecryptInit_ex(ctx, nullptr, nullptr, aes_key.data(), iv.data()) != 1 ||
       EVP_DecryptUpdate(ctx, reinterpret_cast<uint8_t*>(output), &out_len1,
-                        enc_payload.data(), enc_payload.size()) != 1 ||
+                        enc_payload, enc_len) != 1 ||
       EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, kTagSize, tag.data()) != 1 ||
       EVP_DecryptFinal_ex(ctx, reinterpret_cast<uint8_t*>(output) + out_len1, &out_len2) != 1) {
     EVP_CIPHER_CTX_free(ctx);

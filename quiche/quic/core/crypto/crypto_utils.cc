@@ -42,6 +42,8 @@
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/common/quiche_endian.h"
 #include "quiche/common/wire_serialization.h"
+#include "quiche/quic/core/crypto/protected_initial_encrypter.h"
+#include "quiche/quic/core/crypto/protected_initial_decrypter.h"
 
 namespace quic {
 
@@ -384,8 +386,8 @@ void CryptoUtils::CreateInitialObfuscators(Perspective perspective,
   }
 
   // TODO KEELY !!! CHANGE THIS!!!
-  crypters->encrypter = std::make_unique<Aes128GcmEncrypter>();
-  crypters->decrypter = std::make_unique<Aes128GcmDecrypter>();
+  crypters->encrypter = std::make_unique<ProtectedInitialEncrypter>();
+  crypters->decrypter = std::make_unique<ProtectedInitialDecrypter>();
 
   PopulateInitialObfuscators(perspective, version, connection_id,
                              crypters->encrypter.get(),

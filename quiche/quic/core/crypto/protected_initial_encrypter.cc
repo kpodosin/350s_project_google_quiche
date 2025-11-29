@@ -15,6 +15,8 @@
 #include <openssl/kdf.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
+#include <openssl/bio.h>
+#include <openssl/pem.h>
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
 #include "quiche/quic/core/crypto/protected_initial_encrypter.h"
 #include "quiche/quic/core/crypto/aes_128_gcm_encrypter.h"
@@ -27,18 +29,23 @@ namespace quic {
 
     // const unsigned char SERVER_PUBLIC_KEY[256] = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgGPFyw0TjK9XCn+pq/XAyOT4xaKMOrkp8K+vPdrmVHKd2dcpT9IH4fPckzzZ6T1OrJaH5529L5wZ4hh2HGMKinrJHZYZ+ps1ek+/r1i93JrSDJip7L3lE33wW39pFYo8y8WzuwdKGlsAfeG2bR3k1ByiV8n2wJQ5bwQKPVcumMx3AgMBAAE=";
 
-    const char* SERVER_PUBLIC_KEY_PEM = R"(-----BEGIN PUBLIC KEY-----
-    MCowBQYDK2VuAyEAxQz3sAKsoJCV3QUf7yVU8rEmphBCJ5N2vQEpou4koxQ=
-    -----END PUBLIC KEY-----
-    )";
+  const char* SERVER_PUBLIC_KEY_PEM = R"(-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VuAyEAxQz3sAKsoJCV3QUf7yVU8rEmphBCJ5N2vQEpou4koxQ=
+-----END PUBLIC KEY-----
+)";
 
-    const char* SERVER_PRIVATE_KEY_PEM = R"(-----BEGIN PRIVATE KEY-----
-    MC4CAQAwBQYDK2VuBCIEIKjiUObrpM8EG692XZQpWEl1bbAcQolpgz00tfqQyyNz
-    -----END PRIVATE KEY-----
-    )"; 
+
+    // static const char* SERVER_PRIVATE_KEY_PEM = R"(-----BEGIN PRIVATE KEY-----
+    // MC4CAQAwBQYDK2VuBCIEIKjiUObrpM8EG692XZQpWEl1bbAcQolpgz00tfqQyyNz
+    // -----END PRIVATE KEY-----
+    // )"; 
     const size_t kKeySize = 32;
     const size_t kNonceSize = 12;
     const size_t kAuthTagSize = 16;
+    const size_t kTagSize = 16;
+    const size_t kX25519KeySize = 32;
+    const size_t kIVSize = 12;
+    const size_t kHeaderSize = kX25519KeySize + kIVSize + kTagSize;
 
 ProtectedInitialEncrypter::ProtectedInitialEncrypter() : AesBaseEncrypter(EVP_aead_aes_128_gcm(), kKeySize, kAuthTagSize,
                        kNonceSize,
@@ -152,14 +159,14 @@ bool ProtectedInitialEncrypter::EncryptPacket(uint64_t packet_number,
     EVP_CIPHER_CTX_free(ctx);
 
     // now create the output ciphertext buffer !
-    size_t total_len = kX25519KeySize + kIVSize + kTagSize + plaintext.size();
+    size_t total_len = kHeaderSize + ciphertext.size();
     if (max_output_length < total_len) return false;
 
     uint8_t* outp = reinterpret_cast<uint8_t*>(output);
     memcpy(outp, eph_pub_bytes.data(), kX25519KeySize);
     memcpy(outp + kX25519KeySize, iv.data(), kIVSize);
     memcpy(outp + kX25519KeySize + kIVSize, tag.data(), kTagSize);
-    memcpy(outp + kX25519KeySize + kIVSize + kTagSize, plaintext.data(), plaintext.size());
+    memcpy(outp + kX25519KeySize + kIVSize + kTagSize, ciphertext.data(), ciphertext.size());
 
     *output_length = total_len;
 
@@ -171,7 +178,17 @@ bool ProtectedInitialEncrypter::EncryptPacket(uint64_t packet_number,
     EVP_PKEY_CTX_free(hkdf_ctx);
 
     return true;
+}
+size_t ProtectedInitialEncrypter::GetCiphertextSize(size_t plaintext_size) const {
+    return plaintext_size + kHeaderSize;
+}
 
+size_t ProtectedInitialEncrypter::GetMaxPlaintextSize(size_t ciphertext_size) const {
+    if (ciphertext_size < kHeaderSize) {
+        return 0;
+    }
+    return ciphertext_size - kHeaderSize;
+}
 
 
   // old stuff below. 
@@ -251,11 +268,9 @@ bool ProtectedInitialEncrypter::EncryptPacket(uint64_t packet_number,
   // And we're done!!
 
   return true;*/
-}
+// }
 
 }  // namespace quic
-
-
 
 
 
