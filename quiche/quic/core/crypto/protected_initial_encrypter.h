@@ -31,6 +31,9 @@ class QUICHE_EXPORT ProtectedInitialEncrypter : public AesBaseEncrypter {
     absl::string_view plaintext, char* output, size_t* output_length, 
     size_t max_output_length) override;
 
+  size_t GetCiphertextSize(size_t plaintext_size) const override;
+  size_t GetMaxPlaintextSize(size_t ciphertext_size) const override;
+
  private:
 
 
